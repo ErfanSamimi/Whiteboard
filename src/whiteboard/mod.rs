@@ -113,21 +113,25 @@ pub mod whiteboard_storage {
     }
     impl WhiteBoardStorage for MongoDBStorage {
         async fn get_saving_data(&mut self) -> String {
+            let data = self.get_whiteboard().await.clone();
+            let object_id = self.get_document_object_id();
+
+
             let saving_data = MongodbSavingData::new(
-                self.get_document_object_id(),
+                object_id,
                 self.project_id,
-                self.get_whiteboard().await.clone()
+                data
             );
 
             return serde_json::to_string(&saving_data).unwrap();
         }
 
         async fn save(&mut self) {
-            let data = self.get_saving_data().await;
             let doc_id = self.get_document_object_id();
+            let data = self.get_saving_data();
 
             let filter = doc! { "_id": doc_id };
-            let json_value: Value = serde_json::from_str(data.as_str()).unwrap();
+            let json_value: Value = serde_json::from_str(data.await.as_str()).unwrap();
 
             // Convert serde_json::Value to bson::Document
             let update_body: Document = to_document(&json_value).unwrap();
