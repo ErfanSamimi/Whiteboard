@@ -22,6 +22,8 @@ use std::{
 };
 use tokio::sync::broadcast;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+mod whiteboard;
+
 
 // Our shared state
 struct AppState {
