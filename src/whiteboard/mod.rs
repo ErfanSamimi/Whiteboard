@@ -25,9 +25,18 @@ struct CursorPosition {
 pub struct WhiteBoardData {
     lines: Vec<Line>,
     #[serde(rename = "cursorPosition")]
-    cursor_position: CursorPosition,
+    cursor_position: Option<CursorPosition>,
 }
 
+
+impl WhiteBoardData {
+    pub fn new_empty() -> Self {
+        return Self {
+            lines: Vec::new(),
+            cursor_position: None
+        };
+    }
+}
 
 
 #[cfg(test)]
