@@ -12,9 +12,6 @@ use base64::{engine::general_purpose, Engine as _};
 use sqlx::PgPool;
 use subtle::ConstantTimeEq;
 
-extern crate dotenv;
-use dotenv::dotenv;
-
 fn hash_password(password: &str, iterations: u32, salt_length: usize) ->  String {
     let mut salt = vec![0u8; salt_length];
     OsRng.fill_bytes(&mut salt); // Generate a random salt
@@ -106,6 +103,8 @@ impl User {
         return new_user;
     }
 
+
+
     pub async fn get_by_id(pool: &PgPool, user_id: i64) -> Result<Option<Self>, sqlx::Error> {
 
         let user = sqlx::query_as!(
@@ -125,8 +124,57 @@ impl User {
         Ok(user)
     }
 
+
+    pub async fn get_by_username(pool: &PgPool, username: String) -> Result<Option<Self>, sqlx::Error> {
+
+        let user = sqlx::query_as!(
+            User,
+            r#"
+            SELECT id, password, last_login, is_superuser, username,
+                   first_name, last_name, email, is_staff, is_active,
+                   date_joined, created_at, updated_at
+            FROM users
+            WHERE username = $1
+            "#,
+            username
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(user)
+    }
+
+
+    pub async fn authenticate(pool: &PgPool, username: String, raw_password: String) -> Option<Self> {
+        let user = Self::get_by_username(pool, username).await.unwrap();
+        if user.is_none(){
+            return None;
+        }
+        
+        let user = user.unwrap();
+        println!("checking user passsword...");
+        if user.check_password(raw_password){
+            return Some(user);
+        }
+        else {
+            return None;
+        }
+    }
+
+
+    
+    pub fn get_id(&self) -> Option<i64>{
+        self.id
+    }
+
+
+
+    pub fn get_username(&self) -> &String{
+        &self.username
+    }
+    
     pub fn set_password(&mut self, raw_password:String) {
-        let hashed_passwd = hash_password(&raw_password, 720000, 16);
+        let hashed_passwd = hash_password(&raw_password, 7200, 16);
         self.password = hashed_passwd
     }
 
@@ -213,7 +261,9 @@ impl User {
 #[cfg(test)]
 mod tests {
     use super::*;
+    extern crate dotenv;
     use dotenv::dotenv;
+
     use std::env;
     use sqlx::PgPool;
 

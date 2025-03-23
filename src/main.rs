@@ -1,60 +1,118 @@
-//! Example chat application.
+//! Example JWT authorization/authentication.
 //!
 //! Run with
 //!
 //! ```not_rust
-//! cargo run -p example-chat
+//! JWT_SECRET=secret cargo run -p example-jwt
 //! ```
-#[allow(unused_variables)]
-#[allow(unused_imports)]
+
 use axum::{
-    extract::{
-        ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
-        State,
-    },
-    response::{Html, IntoResponse},
-    routing::get,
-    Router,
+    extract::{FromRequestParts, State, FromRef},
+    http::{request::Parts, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, RequestPartsExt, Router,
 };
-use futures::{sink::SinkExt, stream::StreamExt};
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
+use axum_extra::{
+    headers::{authorization::Bearer, Authorization},
+    TypedHeader,
 };
-use tokio::sync::broadcast;
+use http::Method;
+
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::fmt::Display;
+use std::sync::LazyLock;
+use sqlx::postgres::{PgPool, PgPoolOptions};
+use std::env;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tower_http::cors::{CorsLayer, Any};
+use std::time::Duration;
+extern crate dotenv;
+use dotenv::dotenv;
+use tower::ServiceBuilder;
+
 mod whiteboard;
 mod user;
+// Quick instructions
+//
+// - get an authorization token:
+//
+// curl -s \
+//     -w '\n' \
+//     -H 'Content-Type: application/json' \
+//     -d '{"client_id":"foo","client_secret":"bar"}' \
+//     http://localhost:3000/authorize
+//
+// - visit the protected area using the authorized token
+//
+// curl -s \
+//     -w '\n' \
+//     -H 'Content-Type: application/json' \
+//     -H 'Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJiQGIuY29tIiwiY29tcGFueSI6IkFDTUUiLCJleHAiOjEwMDAwMDAwMDAwfQ.M3LAZmrzUkXDC1q5mSzFAs_kJrwuKz3jOoDmjJ0G4gM' \
+//     http://localhost:3000/protected
+//
+// - try to visit the protected area using an invalid token
+//
+// curl -s \
+//     -w '\n' \
+//     -H 'Content-Type: application/json' \
+//     -H 'Authorization: Bearer blahblahblah' \
+//     http://localhost:3000/protected
+
+static KEYS: LazyLock<Keys> = LazyLock::new(|| {
+    let secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    Keys::new(secret.as_bytes())
+});
 
 
-// Our shared state
+
+#[derive(Clone)]
 struct AppState {
-    // We require unique usernames. This tracks which usernames have been taken.
-    user_set: Mutex<HashSet<String>>,
-    // Channel used to send messages to all connected clients.
-    tx: broadcast::Sender<String>,
+    pool: PgPool,
+}
+
+impl FromRef<AppState> for PgPool {
+    fn from_ref(app_state: &AppState) -> PgPool {
+        app_state.pool.clone()
+    }
 }
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| format!("{}=trace", env!("CARGO_CRATE_NAME")).into()),
+                .unwrap_or_else(|_| format!("{}=debug", env!("CARGO_CRATE_NAME")).into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Set up application state for use with with_state().
-    let user_set = Mutex::new(HashSet::new());
-    let (tx, _rx) = broadcast::channel(100);
+    // set up connection pool
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(Duration::from_secs(3))
+        .connect(env::var("DATABASE_URL").expect("DATABASE_URL must be set").as_str())
+        .await
+        .expect("can't connect to database");
 
-    let app_state = Arc::new(AppState { user_set, tx });
+    let state = AppState { pool };
+
+
+    let cors_layer = CorsLayer::new()
+    .allow_methods([Method::GET, Method::POST])
+    .allow_headers(Any)
+    .allow_origin(Any);
+
+
 
     let app = Router::new()
-        .route("/", get(index))
-        .route("/websocket", get(websocket_handler))
-        .with_state(app_state);
+        .route("/protected", get(protected))
+        .route("/api/auth/login/", post(authorize).with_state(state.clone()))
+        .layer(ServiceBuilder::new().layer(cors_layer));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
@@ -63,103 +121,157 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn websocket_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    ws.on_upgrade(|socket| websocket(socket, state))
+async fn protected(claims: Claims) -> Result<String, AuthError> {
+    // Send the protected data to the user
+    Ok(format!(
+        "Welcome to the protected area :)\nYour data:\n{claims}",
+    ))
 }
 
-// This function deals with a single websocket connection, i.e., a single
-// connected client / user, for which we will spawn two independent tasks (for
-// receiving / sending chat messages).
-async fn websocket(stream: WebSocket, state: Arc<AppState>) {
-    // By splitting, we can send and receive at the same time.
-    let (mut sender, mut receiver) = stream.split();
+struct DatabaseConnection(sqlx::pool::PoolConnection<sqlx::Postgres>);
 
-    // Username gets set in the receive loop, if it's valid.
-    let mut username = String::new();
-    // Loop until a text message is found.
-    while let Some(Ok(message)) = receiver.next().await {
-        if let Message::Text(name) = message {
-            // If username that is sent by client is not taken, fill username string.
-            check_username(&state, &mut username, name.as_str());
 
-            // If not empty we want to quit the loop else we want to quit function.
-            if !username.is_empty() {
-                break;
-            } else {
-                // Only send our client that username is taken.
-                let _ = sender
-                    .send(Message::Text(Utf8Bytes::from_static(
-                        "Username already taken.",
-                    )))
-                    .await;
+impl<S> FromRequestParts<S> for DatabaseConnection
+where
+    PgPool: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, String);
 
-                return;
-            }
-        }
+    async fn from_request_parts(_parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let pool = PgPool::from_ref(state);
+
+        let conn = pool.acquire().await.map_err(internal_error)?;
+
+        Ok(Self(conn))
+    }
+}
+
+async fn authorize( 
+    State(state): State<AppState>,
+    Json(payload): Json<AuthPayload>,
+) -> Result<Json<AuthBody>, AuthError> {
+    // Check if the user sent the credentials
+    if payload.username.is_empty() || payload.password.is_empty() {
+        return Err(AuthError::MissingCredentials);
+    }
+    // Here you can check the user credentials from a database
+    let user = user::User::authenticate(&state.pool, payload.username, payload.password).await;
+    if user.is_none() {
+        return Err(AuthError::WrongCredentials);
     }
 
-    // We subscribe *before* sending the "joined" message, so that we will also
-    // display it to our client.
-    let mut rx = state.tx.subscribe();
-
-    // Now send the "joined" message to all subscribers.
-    let msg = format!("{username} joined.");
-    tracing::debug!("{msg}");
-    let _ = state.tx.send(msg);
-
-    // Spawn the first task that will receive broadcast messages and send text
-    // messages over the websocket to our client.
-    let mut send_task = tokio::spawn(async move {
-        while let Ok(msg) = rx.recv().await {
-            // In any websocket error, break loop.
-            if sender.send(Message::text(msg)).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    // Clone things we want to pass (move) to the receiving task.
-    let tx = state.tx.clone();
-    let name = username.clone();
-
-    // Spawn a task that takes messages from the websocket, prepends the user
-    // name, and sends them to all broadcast subscribers.
-    let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(Message::Text(text))) = receiver.next().await {
-            // Add username before message.
-            let _ = tx.send(format!("{name}: {text}"));
-        }
-    });
-
-    // If any one of the tasks run to completion, we abort the other.
-    tokio::select! {
-        _ = &mut send_task => recv_task.abort(),
-        _ = &mut recv_task => send_task.abort(),
+    let user = user.unwrap();
+    let claims = Claims {
+        user_id: user.get_id().unwrap(),
+        // Mandatory expiry time as UTC timestamp
+        exp: 2000000000, // May 2033
     };
+    // Create the authorization token
+    let token = encode(&Header::default(), &claims, &KEYS.encoding)
+        .map_err(|_| AuthError::TokenCreation)?;
 
-    // Send "user left" message (similar to "joined" above).
-    let msg = format!("{username} left.");
-    tracing::debug!("{msg}");
-    let _ = state.tx.send(msg);
-
-    // Remove username from map so new clients can take it again.
-    state.user_set.lock().unwrap().remove(&username);
+    // Send the authorized token
+    Ok(Json(AuthBody::new(token, user.get_username().clone())))
 }
 
-fn check_username(state: &AppState, string: &mut String, name: &str) {
-    let mut user_set = state.user_set.lock().unwrap();
-
-    if !user_set.contains(name) {
-        user_set.insert(name.to_owned());
-
-        string.push_str(name);
+impl Display for Claims {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "user_id: {}", self.user_id)
     }
 }
 
-// Include utf-8 file at **compile** time.
-async fn index() -> Html<&'static str> {
-    Html(std::include_str!("../chat.html"))
+impl AuthBody {
+    fn new(access: String, username:String) -> Self {
+        Self {
+            access,
+            username,
+            token_type: "Bearer".to_string(),
+        }
+    }
+}
+
+impl<S> FromRequestParts<S> for Claims
+where
+    S: Send + Sync,
+{
+    type Rejection = AuthError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        // Extract the token from the authorization header
+        let TypedHeader(Authorization(bearer)) = parts
+            .extract::<TypedHeader<Authorization<Bearer>>>()
+            .await
+            .map_err(|_| AuthError::InvalidToken)?;
+        // Decode the user data
+        let token_data = decode::<Claims>(bearer.token(), &KEYS.decoding, &Validation::default())
+            .map_err(|_| AuthError::InvalidToken)?;
+
+        Ok(token_data.claims)
+    }
+}
+
+impl IntoResponse for AuthError {
+    fn into_response(self) -> Response {
+        let (status, error_message) = match self {
+            AuthError::WrongCredentials => (StatusCode::UNAUTHORIZED, "Wrong credentials"),
+            AuthError::MissingCredentials => (StatusCode::BAD_REQUEST, "Missing credentials"),
+            AuthError::TokenCreation => (StatusCode::INTERNAL_SERVER_ERROR, "Token creation error"),
+            AuthError::InvalidToken => (StatusCode::BAD_REQUEST, "Invalid token"),
+        };
+        let body = Json(json!({
+            "error": error_message,
+        }));
+        (status, body).into_response()
+    }
+}
+
+struct Keys {
+    encoding: EncodingKey,
+    decoding: DecodingKey,
+}
+
+impl Keys {
+    fn new(secret: &[u8]) -> Self {
+        Self {
+            encoding: EncodingKey::from_secret(secret),
+            decoding: DecodingKey::from_secret(secret),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Claims {
+    user_id: i64,
+    exp: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct AuthBody {
+    access: String,
+    username: String,
+    token_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthPayload {
+    username: String,
+    password: String,
+}
+
+#[derive(Debug)]
+enum AuthError {
+    WrongCredentials,
+    MissingCredentials,
+    TokenCreation,
+    InvalidToken,
+}
+
+/// Utility function for mapping any error into a `500 Internal Server Error`
+/// response.
+fn internal_error<E>(err: E) -> (StatusCode, String)
+where
+    E: std::error::Error,
+{
+    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
