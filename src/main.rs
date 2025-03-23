@@ -5,7 +5,8 @@
 //! ```not_rust
 //! cargo run -p example-chat
 //! ```
-
+#[allow(unused_variables)]
+#[allow(unused_imports)]
 use axum::{
     extract::{
         ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
@@ -23,6 +24,7 @@ use std::{
 use tokio::sync::broadcast;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod whiteboard;
+mod user;
 
 
 // Our shared state
