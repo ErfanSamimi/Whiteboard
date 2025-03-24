@@ -58,6 +58,8 @@ async fn main() {
         .route("/api/projects/", post(api::project::project_creation_view)
             .get(api::project::owned_project_list_view)
             .with_state(state.clone()))
+
+        .route("/api/projects/{project_id}/update_collaborators/", post(api::project::add_collaborator_view).with_state(state.clone()))
         .layer(ServiceBuilder::new().layer(cors_layer));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")

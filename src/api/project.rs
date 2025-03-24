@@ -1,10 +1,16 @@
 use chrono::{ DateTime, Utc };
+use crate::api::project;
 use crate::project::Project;
 use serde::{Serialize, Deserialize};
 use super::common::AppState;
 use super::auth::{Claims, AuthError};
-use axum::extract::State;
-use axum::{Json, debug_handler};
+use axum::{
+    extract::{State, Path},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+    debug_handler,
+};
 use sqlx::{ FromRow, PgPool };
 use std::collections::HashMap;
 
@@ -31,6 +37,12 @@ pub struct ProjectOutput {
     created_at: Option<DateTime<Utc>>,
     updated_at: Option<DateTime<Utc>>,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectColaborationInput {
+    collaborator_ids: Vec<i64>,
+}
+
 
 impl ProjectOutput {
     pub fn from_db_rows(rows: &Vec<ProjectDetailDbRow>) -> Vec<Self> {
@@ -146,6 +158,59 @@ pub struct ProjectDetailDbRow {
 }
 
 
+mod permissions {
+    use axum::response::IntoResponse;
+
+    use super::*;
+    pub enum ProjPermError {
+        NOT_FOUND,
+        NOT_OWNER,
+        NOT_COLABORATOR
+    }
+
+    impl ToString for ProjPermError {
+        fn to_string(&self) -> String {
+            return match self {
+                Self::NOT_COLABORATOR => "not collaborator of the project.",
+                Self::NOT_FOUND => "project not found",
+                Self::NOT_OWNER => "not owner of the proejct"
+            }.to_string();
+        }
+    }
+
+    impl IntoResponse for ProjPermError {
+        fn into_response(self) -> axum::response::Response {
+            (StatusCode::FORBIDDEN, self.to_string()).into_response()
+        }
+    }
+
+    async fn get_project(project_id: i64, state: &AppState) -> Result<Project, ProjPermError>{
+        let proj = Project::get_by_id(&state.pool, project_id).await.unwrap();
+        if proj.is_none(){
+            return Err(ProjPermError::NOT_FOUND);
+        }
+        return Ok(proj.unwrap());
+    }
+
+    pub async fn is_owner(project_id: i64, state: &AppState, claims: &Claims) -> Result<Project, ProjPermError>{
+        let proj = get_project(project_id, state).await?;
+        if proj.get_owner_id() == claims.get_user_id() {
+            return Ok(proj);
+        }
+        return Err(ProjPermError::NOT_OWNER);
+    }
+
+
+    pub async fn is_collaborator(project_id: i64, state: &AppState, claims: &Claims) -> Result<Project, ProjPermError>{
+        let proj = get_project(project_id, state).await?;
+        if proj.is_collaborator(&state.pool, claims.get_user_id()).await.unwrap(){
+            return Ok(proj);
+        }
+        return Err(ProjPermError::NOT_COLABORATOR);
+    }  
+}
+
+
 #[debug_handler]
 pub async fn project_creation_view(
     claims: Claims,
@@ -185,6 +250,32 @@ pub async fn owned_project_list_view(
 
     let output_data =   ProjectOutput::get_owned_projects(
         &state.pool, claims.get_user_id()
+    ).await.unwrap();
+
+    return Ok(
+        Json(
+          output_data
+        )
+    );
+}
+
+#[debug_handler]
+pub async fn add_collaborator_view(
+    claims: Claims,
+    State(state): State<AppState>,
+    Path(project_id): Path<i64>,
+    Json(payload): Json<ProjectColaborationInput>,
+) -> Result<Json<Option<ProjectOutput>>, permissions::ProjPermError> {
+
+    println!("{}", claims);
+    println!("{:?}", payload);
+
+    let proj: Project = permissions::is_owner(project_id, &state, &claims).await?;
+    proj.update_collaborators(&state.pool, payload.collaborator_ids).await.unwrap();
+
+
+    let output_data =   ProjectOutput::get_project_detail(
+        &state.pool, project_id
     ).await.unwrap();
 
     return Ok(

@@ -87,6 +87,62 @@ impl Project {
     }
 
 
+
+
+    pub async fn update_collaborators(&self, pool: &PgPool, colabs: Vec<i64>) -> Result<(), sqlx::Error>{
+        // Start a transaction
+        let mut tx = pool.begin().await?;
+
+        // clear all collabrators
+        let collabrator_remover = sqlx::query("DELETE FROM projects_collaborators WHERE project_id = $1")
+        .bind(self.get_id().unwrap())
+        .execute(&mut *tx);
+
+        // Prepare the bulk insert statement
+        let mut query_str = String::from(
+            r#"INSERT INTO projects_collaborators (project_id, user_id) VALUES "#,
+        );
+
+        // Generate a list of placeholders for the values
+        let mut params = Vec::new();
+        let mut placeholders = Vec::new();
+        
+        for (index, &user_id) in colabs.iter().enumerate() {
+            let param_index = index + 1;
+            placeholders.push(format!("(${}, ${})", param_index * 2 - 1, param_index * 2));
+            params.push(self.get_id().unwrap());
+            params.push(user_id);
+                }
+
+        query_str.push_str(&placeholders.join(", "));
+        query_str.push_str(" ON CONFLICT (project_id, user_id) DO NOTHING"); // Avoid inserting duplicate rows
+
+        // Execute the bulk insert
+        let mut bulk_query = sqlx::query(&query_str);
+        for i in params{
+            bulk_query = bulk_query.bind(i);
+        }
+
+
+        collabrator_remover.await.unwrap();
+        bulk_query.execute(&mut *tx).await?;
+
+        tx.commit().await?;
+        Ok(())
+
+    }
+
+    pub async fn is_collaborator(&self, pool: &PgPool, user_id: i64) -> Result<bool, sqlx::Error>{
+        let result: Option<(i32,)> = sqlx::query_as("SELECT id FROM projects_collaborators WHERE project_id = $1 AND user_id = $2;")
+        .bind(self.get_id().unwrap())
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+
+        return Ok(result.is_some());
+    }
+
+
     pub async fn create_row(&mut self, pool: &PgPool) -> Result<(), String> {
         if self.id.is_some() {
             return Err("Can not create an already exists row. The project Id must be None to create new row.".to_string());
