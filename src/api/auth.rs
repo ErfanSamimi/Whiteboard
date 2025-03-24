@@ -42,7 +42,7 @@ impl Keys {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Claims {
+pub struct Claims {
     user_id: i64,
     exp: usize,
 }

@@ -124,6 +124,24 @@ impl User {
         Ok(user)
     }
 
+    pub async fn get_active_users(pool: &PgPool,) -> Result<Vec<Self>, sqlx::Error> {
+
+        let user = sqlx::query_as!(
+            User,
+            r#"
+            SELECT id, password, last_login, is_superuser, username,
+                   first_name, last_name, email, is_staff, is_active,
+                   date_joined, created_at, updated_at
+            FROM users
+            WHERE is_active = true
+            "#,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(user)
+    }
+
 
     pub async fn get_by_username(pool: &PgPool, username: String) -> Result<Option<Self>, sqlx::Error> {
 
@@ -171,6 +189,18 @@ impl User {
 
     pub fn get_username(&self) -> &String{
         &self.username
+    }
+
+    pub fn get_email(&self) -> &String{
+        &self.email
+    }
+
+    pub fn get_created_at(&self) -> DateTime<Utc>{
+        self.created_at
+    }
+
+    pub fn get_updated_at(&self) -> DateTime<Utc>{
+        self.updated_at
     }
     
     pub fn set_password(&mut self, raw_password:String) {
