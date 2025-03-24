@@ -48,6 +48,6 @@ impl UserListOutputView{
 
 pub async fn user_list_view(claims: Claims, State(state): State<AppState>,) -> Json<Vec<UserListOutputView>> {
     println!("{}", claims);
-    let users = UserListOutputView::get_active_users(&state.pool).await.unwrap();
+    let users = UserListOutputView::get_active_users(&state.pg_pool).await.unwrap();
     return Json(users);
 }

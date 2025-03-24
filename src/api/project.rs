@@ -185,7 +185,7 @@ mod permissions {
     }
 
     async fn get_project(project_id: i64, state: &AppState) -> Result<Project, ProjPermError>{
-        let proj = Project::get_by_id(&state.pool, project_id).await.unwrap();
+        let proj = Project::get_by_id(&state.pg_pool, project_id).await.unwrap();
         if proj.is_none(){
             return Err(ProjPermError::NOT_FOUND);
         }
@@ -203,7 +203,7 @@ mod permissions {
 
     pub async fn is_collaborator(project_id: i64, state: &AppState, claims: &Claims) -> Result<Project, ProjPermError>{
         let proj = get_project(project_id, state).await?;
-        if proj.is_collaborator(&state.pool, claims.get_user_id()).await.unwrap(){
+        if proj.is_collaborator(&state.pg_pool, claims.get_user_id()).await.unwrap(){
             return Ok(proj);
         }
         return Err(ProjPermError::NOT_COLABORATOR);
@@ -222,12 +222,12 @@ pub async fn project_creation_view(
     println!("{:?}", payload);
 
     let mut proj = Project::create_new(payload.name, claims.get_user_id());
-    proj.create_row(&state.pool).await.unwrap();
+    proj.create_row(&state.pg_pool).await.unwrap();
 
 
     let project_id = proj.get_id().unwrap();
     let output_data =   ProjectOutput::get_project_detail(
-        &state.pool, project_id
+        &state.pg_pool, project_id
     ).await.unwrap();
 
     return Ok(
@@ -249,7 +249,7 @@ pub async fn owned_project_list_view(
 
 
     let output_data =   ProjectOutput::get_owned_projects(
-        &state.pool, claims.get_user_id()
+        &state.pg_pool, claims.get_user_id()
     ).await.unwrap();
 
     return Ok(
@@ -271,11 +271,11 @@ pub async fn add_collaborator_view(
     println!("{:?}", payload);
 
     let proj: Project = permissions::is_owner(project_id, &state, &claims).await?;
-    proj.update_collaborators(&state.pool, payload.collaborator_ids).await.unwrap();
+    proj.update_collaborators(&state.pg_pool, payload.collaborator_ids).await.unwrap();
 
 
     let output_data =   ProjectOutput::get_project_detail(
-        &state.pool, project_id
+        &state.pg_pool, project_id
     ).await.unwrap();
 
     return Ok(
@@ -284,7 +284,6 @@ pub async fn add_collaborator_view(
         )
     );
 }
-
 
 #[cfg(test)]
 mod tests {

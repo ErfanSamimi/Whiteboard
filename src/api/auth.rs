@@ -137,7 +137,7 @@ pub async fn authorize(
         return Err(AuthError::MissingCredentials);
     }
     // Here you can check the user credentials from a database
-    let user = user::User::authenticate(&state.pool, payload.username, payload.password).await;
+    let user = user::User::authenticate(&state.pg_pool, payload.username, payload.password).await;
     if user.is_none() {
         return Err(AuthError::WrongCredentials);
     }

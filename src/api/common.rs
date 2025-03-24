@@ -3,16 +3,16 @@ use axum::{
     extract::{FromRequestParts, FromRef},
     http::{request::Parts, StatusCode},
 };
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use redis::Client as RedisClient;
+use mongodb::Client as MongoClient;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: PgPool,
-}
-
-impl FromRef<AppState> for PgPool {
-    fn from_ref(app_state: &AppState) -> PgPool {
-        app_state.pool.clone()
-    }
+    pub pg_pool: Arc<PgPool>,
+    pub redis_client: Arc<RedisClient>,
+    pub mongo_client: Arc<MongoClient>,
 }
 
 
