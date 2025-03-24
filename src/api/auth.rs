@@ -73,6 +73,12 @@ where
     }
 }
 
+impl Claims {
+    pub fn get_user_id(&self) -> i64 {
+        return self.user_id;
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct AuthBody {
     access: String,

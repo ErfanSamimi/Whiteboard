@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT projects.id as proj_id, projects.name as proj_name, projects.created_at as proj_create, projects.updated_at as proj_update,\n                    owners.id as own_id, owners.username as own_username, owners.email as own_email, owners.created_at as own_create, owners.updated_at as own_update,\n                    colabs.id as colab_id, colabs.username as colab_username, colabs.email as colab_email, colabs.created_at as colab_create, colabs.updated_at as colab_update\n                    FROM projects\n\n                    LEFT JOIN projects_collaborators AS pc ON projects.id = pc.project_id\n                    LEFT JOIN users AS owners ON projects.owner_id = owners.id\n                    LEFT JOIN users AS colabs ON colabs.id = pc.user_id\n\n                        WHERE projects.id = $1;\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "proj_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "proj_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "proj_create",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "proj_update",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "own_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "own_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "own_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "own_create",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "own_update",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "colab_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "colab_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "colab_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "colab_create",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "colab_update",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "881f7d8ed47a63114c0ae6e5e15ad7041b9957b021f9f944e679d3fe26eff450"
+}

@@ -4,7 +4,7 @@ use sqlx::FromRow;
 use sqlx::postgres::PgPoolOptions;
 
 use chrono::{DateTime, Utc};
-use pbkdf2::{pbkdf2_hmac, Params};
+use pbkdf2::pbkdf2_hmac;
 use sha2::Sha256;
 use rand_core::OsRng;
 use rand_core::RngCore;

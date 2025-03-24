@@ -1,6 +1,7 @@
 mod whiteboard;
 mod user;
 mod api;
+mod project;
 
 extern crate dotenv;
 
@@ -54,6 +55,7 @@ async fn main() {
     let app = Router::new()
         .route("/api/auth/login/", post(api::auth::authorize).with_state(state.clone()))
         .route("/api/projects/users/", get(api::user::user_list_view).with_state(state.clone()))
+        .route("/api/projects/", post(api::project::project_creation_view).with_state(state.clone()))
         .layer(ServiceBuilder::new().layer(cors_layer));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
