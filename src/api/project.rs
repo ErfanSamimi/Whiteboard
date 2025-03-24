@@ -66,6 +66,33 @@ impl ProjectOutput {
     }
 
 
+
+    async fn get_owned_projects(pool: &PgPool, user_id: i64) -> Result<Vec<Self>, sqlx::Error>{
+        let proj_data = sqlx::query_as_unchecked!(
+            ProjectDetailDbRow,
+            r#"
+                SELECT projects.id as proj_id, projects.name as proj_name, projects.created_at as proj_create, projects.updated_at as proj_update,
+                    owners.id as own_id, owners.username as own_username, owners.email as own_email, owners.created_at as own_create, owners.updated_at as own_update,
+                    colabs.id as colab_id, colabs.username as colab_username, colabs.email as colab_email, colabs.created_at as colab_create, colabs.updated_at as colab_update
+                    FROM projects
+
+                    LEFT JOIN projects_collaborators AS pc ON projects.id = pc.project_id
+                    LEFT JOIN users AS owners ON projects.owner_id = owners.id
+                    LEFT JOIN users AS colabs ON colabs.id = pc.user_id
+
+                        WHERE projects.owner_id = $1;
+            "#,
+            user_id
+        )
+        .fetch_all(pool)
+        .await?;
+
+        
+        let proj_detail = Self::from_db_rows(&proj_data);
+        return Ok(proj_detail);
+
+    }
+
     async fn get_project_detail(pool: &PgPool, project_id: i64) -> Result<Option<Self>, sqlx::Error>{
         let proj_data = sqlx::query_as_unchecked!(
             ProjectDetailDbRow,
@@ -145,6 +172,27 @@ pub async fn project_creation_view(
     );
 }
 
+
+
+#[debug_handler]
+pub async fn owned_project_list_view(
+    claims: Claims,
+    State(state): State<AppState>
+) -> Result<Json<Vec<ProjectOutput>>, AuthError> {
+
+    println!("{}", claims);
+
+
+    let output_data =   ProjectOutput::get_owned_projects(
+        &state.pool, claims.get_user_id()
+    ).await.unwrap();
+
+    return Ok(
+        Json(
+          output_data
+        )
+    );
+}
 
 
 #[cfg(test)]
