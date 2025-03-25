@@ -7,5 +7,5 @@ pub trait WhiteBoardStorage {
     async fn save(&mut self);
     async fn set_whiteboard(&mut self, value: WhiteBoardData);
     async fn get_whiteboard(&mut self) -> &WhiteBoardData;
-    fn get_project_id(&self) -> u32;
+    fn get_project_id(&self) -> i64;
 }

@@ -3,17 +3,17 @@ use serde::{ Serialize, Deserialize };
 use serde_json::Value;
 use crate::whiteboard::WhiteBoardData;
 use super::WhiteBoardStorage;
-
+use std::sync::Arc;
 #[derive(Serialize, Deserialize, Debug)]
 struct MongodbSavingData {
     #[serde(rename = "_id")]
     id: ObjectId,
-    project_id: u32,
+    project_id: i64,
     data: WhiteBoardData,
 }
 
 impl MongodbSavingData {
-    fn new(id: ObjectId, project_id: u32, data: WhiteBoardData) -> Self {
+    fn new(id: ObjectId, project_id: i64, data: WhiteBoardData) -> Self {
         return Self {
             id,
             project_id,
@@ -23,7 +23,7 @@ impl MongodbSavingData {
 }
 
 pub struct MongoDBStorage {
-    project_id: u32,
+    project_id: i64,
     collection: Collection<Document>,
     object_id: Option<ObjectId>,
     whiteboard: Option<WhiteBoardData>,
@@ -31,7 +31,7 @@ pub struct MongoDBStorage {
 
 impl MongoDBStorage {
     pub fn new(
-        project_id: u32,
+        project_id: i64,
         collection: Collection<Document>,
         object_id: Option<ObjectId>
     ) -> Self {
@@ -113,7 +113,7 @@ impl WhiteBoardStorage for MongoDBStorage {
         return self.whiteboard.as_ref().unwrap();
     }
 
-    fn get_project_id(&self) -> u32 {
+    fn get_project_id(&self) -> i64 {
         return self.project_id;
     }
 }

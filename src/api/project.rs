@@ -1,6 +1,7 @@
 use chrono::{ DateTime, Utc };
 use crate::api::project;
 use crate::project::Project;
+use crate::whiteboard::storage::WhiteBoardStorage;
 use serde::{Serialize, Deserialize};
 use super::common::AppState;
 use super::auth::{Claims, AuthError};
@@ -13,6 +14,11 @@ use axum::{
 };
 use sqlx::{ FromRow, PgPool };
 use std::collections::HashMap;
+use crate::whiteboard::{
+    WhiteBoardData,
+    storage::redis::RedisStorage as WhiteBoardRedisStorage
+};
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProjectCreationInput {
@@ -203,6 +209,9 @@ mod permissions {
 
     pub async fn is_collaborator(project_id: i64, state: &AppState, claims: &Claims) -> Result<Project, ProjPermError>{
         let proj = get_project(project_id, state).await?;
+        if proj.get_owner_id() == claims.get_user_id() {
+            return Ok(proj);
+        }
         if proj.is_collaborator(&state.pg_pool, claims.get_user_id()).await.unwrap(){
             return Ok(proj);
         }
@@ -281,6 +290,35 @@ pub async fn add_collaborator_view(
     return Ok(
         Json(
           output_data
+        )
+    );
+}
+
+
+#[debug_handler]
+pub async fn get_whiteboard_data_view(
+    claims: Claims,
+    State(state): State<AppState>,
+    Path(project_id): Path<i64>,
+) -> Result<Json<WhiteBoardData>, permissions::ProjPermError> {
+
+    println!("{}", claims);
+
+    let proj = permissions::is_collaborator(project_id, &state, &claims);
+
+    let database = state.mongo_client.database("whiteboard_db");
+    let collection = database.collection("whiteboards");
+
+
+    proj.await?;
+    
+    let mut storage = WhiteBoardRedisStorage::new(
+        project_id, state.redis_client, collection
+    );
+
+    return Ok(
+        Json(
+          storage.get_whiteboard().await.clone()
         )
     );
 }

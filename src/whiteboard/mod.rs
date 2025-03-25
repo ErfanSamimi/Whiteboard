@@ -1,4 +1,4 @@
-mod storage;
+pub mod storage;
 use serde::{ Deserialize, Serialize };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

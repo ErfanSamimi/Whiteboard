@@ -9,7 +9,6 @@ extern crate dotenv;
 use axum::{
     routing::{post, get},
     Router,
-    extract::Extension
 };
 use std::net::SocketAddr;
 use http::Method;
@@ -17,14 +16,12 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::env;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
 use tower_http::cors::{CorsLayer, Any};
-use std::time::Duration;
 use dotenv::dotenv;
 use tower::ServiceBuilder;
 use mongodb::Client as MongoClient;
 use std::error::Error;
 use tracing::{error, info, instrument};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use redis::Client as RedisClient;
 use api::common::AppState;
 
@@ -96,7 +93,7 @@ async fn create_app_state() -> Result<AppState, Box<dyn Error>> {
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
 
-    
+
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(fmt::layer())
@@ -122,6 +119,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
 
         .route("/api/projects/{project_id}/update_collaborators/", post(api::project::add_collaborator_view))
+        .route("/api/projects/{project_id}/drawing/", get(api::project::get_whiteboard_data_view))
         .layer(ServiceBuilder::new().layer(cors_layer))
         .with_state(app_state);
 
