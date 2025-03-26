@@ -4,10 +4,6 @@ use axum::{
     extract::{Path, State, WebSocketUpgrade},
     response::IntoResponse,
 };
-use axum_extra::{
-    headers::{Authorization, authorization::Bearer},
-    TypedHeader,
-};
 use axum::extract::ws::{Message, WebSocket, Utf8Bytes};
 use futures::{SinkExt, StreamExt};
 use std::{collections::HashMap, sync::Arc};
