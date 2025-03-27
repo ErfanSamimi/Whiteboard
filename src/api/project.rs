@@ -164,7 +164,7 @@ pub struct ProjectDetailDbRow {
 }
 
 
-mod permissions {
+pub mod permissions {
     use axum::response::IntoResponse;
 
     use super::*;

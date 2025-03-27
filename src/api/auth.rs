@@ -65,12 +65,17 @@ where
             .extract::<TypedHeader<Authorization<Bearer>>>()
             .await
             .map_err(|_| AuthError::InvalidToken)?;
-        // Decode the user data
-        let token_data = decode::<Claims>(bearer.token(), &KEYS.decoding, &Validation::default())
-            .map_err(|_| AuthError::InvalidToken)?;
-
-        Ok(token_data.claims)
+        
+        return validate_token(bearer.token());
     }
+}
+
+pub fn validate_token(token: &str) -> Result<Claims, AuthError>{
+    // Decode the user data
+    let token_data = decode::<Claims>(token, &KEYS.decoding, &Validation::default())
+    .map_err(|_| AuthError::InvalidToken)?;
+
+    Ok(token_data.claims)
 }
 
 impl Claims {

@@ -10,7 +10,8 @@ use axum::{
     routing::{post, get},
     Router,
 };
-use std::net::SocketAddr;
+use tokio::sync::RwLock;
+use std::{collections::HashMap, net::SocketAddr};
 use http::Method;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::env;
@@ -24,7 +25,7 @@ use tracing::{error, info, instrument};
 use std::sync::Arc;
 use redis::Client as RedisClient;
 use api::common::AppState;
-
+use api::whiteboard::{redis_subscriber, ws_handler};
 
 
 #[instrument(skip(pg_pool), name = "postgres_health_check")]
@@ -86,6 +87,7 @@ async fn create_app_state() -> Result<AppState, Box<dyn Error>> {
         pg_pool: Arc::new(pg_pool),
         redis_client,
         mongo_client,
+        ws_groups: Arc::new(RwLock::new(HashMap::new())),
     })
 }
 
@@ -108,7 +110,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     .allow_headers(Any)
     .allow_origin(Any);
 
-
+        // Start Redis WS subscription listener
+        tokio::spawn(redis_subscriber(app_state.clone()));
 
     let app = Router::new()
         .route("/api/auth/login/", post(api::auth::authorize))
@@ -120,6 +123,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         .route("/api/projects/{project_id}/update_collaborators/", post(api::project::add_collaborator_view))
         .route("/api/projects/{project_id}/drawing/", get(api::project::get_whiteboard_data_view))
+        .route("/ws/whiteboard/{project_id}/", get(ws_handler))
         .layer(ServiceBuilder::new().layer(cors_layer))
         .with_state(app_state);
 

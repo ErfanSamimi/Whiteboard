@@ -3,16 +3,27 @@ use axum::{
     extract::{FromRequestParts, FromRef},
     http::{request::Parts, StatusCode},
 };
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::{collections::HashMap, sync::Arc};
 use redis::Client as RedisClient;
 use mongodb::Client as MongoClient;
+use tokio::sync::{mpsc, RwLock};
+use axum::extract::ws::Message;
+
+// Represents a channel to send messages to a WebSocket client
+// Each client connection will have one such sender
+pub type ClientTx = mpsc::UnboundedSender<Message>;
+
+// Groups is a shared, thread-safe map from group names to a list of client senders
+// This allows broadcasting messages to all clients in a group
+pub type Groups = Arc<RwLock<HashMap<i64, Vec<ClientTx>>>>;
 
 #[derive(Clone)]
 pub struct AppState {
     pub pg_pool: Arc<PgPool>,
     pub redis_client: Arc<RedisClient>,
     pub mongo_client: Arc<MongoClient>,
+    pub ws_groups: Groups,
+
 }
 
 

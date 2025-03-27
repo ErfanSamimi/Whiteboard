@@ -14,7 +14,7 @@ struct Line {
     width: u32,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct CursorPosition {
+pub struct CursorPosition {
     x: f32,
     y: f32,
     #[serde(rename = "userId")]
