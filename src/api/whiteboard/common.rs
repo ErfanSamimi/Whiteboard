@@ -67,3 +67,50 @@ impl From<&WsEventReceive> for WsEventSend {
         }
     }
 }
+
+
+use flate2::write::DeflateEncoder;
+use flate2::read::DeflateDecoder;
+use flate2::Compression;
+use std::io::{Write, Read};
+
+pub fn compress_data(data: String) -> Vec<u8> {
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(6));
+    match encoder.write_all(data.as_bytes()) {
+        Ok(_) =>
+            match encoder.finish() {
+                Ok(compressed) => { compressed }
+                Err(e) => {
+                    println!("Compression error: {}", e);
+                    data.into_bytes()
+                }
+            }
+        Err(e) => {
+            println!("Compression error: {}", e);
+            data.into_bytes()
+        }
+    }
+}
+
+pub fn decompress_data(data: Vec<u8>) -> Result<String, String> {
+
+    // First, try raw DEFLATE decompression (like Python's zlib with wbits=-15)
+    let decompressed = match DeflateDecoder::new(&data[..]).bytes().collect::<Result<Vec<u8>, _>>() {
+        Ok(decompressed_bytes) => {
+            decompressed_bytes
+        }
+        Err(e) => {
+            println!("Decompression failed: {}, trying as regular UTF-8 JSON", e);
+            return String::from_utf8(data)
+                .map_err(|e| {
+                    println!("UTF-8 decode error on fallback: {}", e);
+                    format!("UTF-8 decode error: {}", e)
+                });
+        }
+    };
+
+    String::from_utf8(decompressed).map_err(|e| {
+        println!("UTF-8 decode error after decompression: {}", e);
+        format!("UTF-8 decode error: {}", e)
+    })
+}

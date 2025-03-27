@@ -3,9 +3,9 @@ mod auth;
 mod common;
 // --- Imports and Type Definitions ---
 
-use axum::{ extract::{ Path, State, WebSocketUpgrade }, response::IntoResponse };
+use axum::{ extract::{ Path, State, WebSocketUpgrade }, response::IntoResponse, body::Bytes };
 use axum::extract::ws::{ Message, WebSocket, Utf8Bytes };
-use common::{ WsEventReceive, WsEventSend };
+use common::{ compress_data, decompress_data, WsEventReceive, WsEventSend };
 use futures::{ stream::SplitSink, SinkExt, StreamExt };
 use tokio::sync::mpsc;
 use redis::AsyncCommands;
@@ -103,7 +103,7 @@ async fn handle_connection(
 
     // Task: receive messages from the WebSocket and publish to Redis
     let recv_task = tokio::spawn(async move {
-        while let Some(Ok(Message::Text(text))) = receiver_ws.next().await {
+        while let Some(Ok(Message::Binary(comressed_message))) = receiver_ws.next().await {
             let mut conn = match redis_client.get_multiplexed_async_connection().await {
                 Ok(c) => c,
                 Err(_) => {
@@ -111,12 +111,8 @@ async fn handle_connection(
                 }
             };
 
-        //     let _ = conn.publish::<_, _, ()>(
-        //         format!("group:{}", group_clone),
-        //         text.to_string()
-        //     ).await;
-        // }
-        
+            let text = decompress_data(comressed_message.into_iter().collect()).unwrap();
+
             let event = match serde_json::from_str::<WsEventReceive>(text.as_str()) {
                 Ok(e) => WsEventSend::from(&e),
                 Err(_) => WsEventSend::Error { message: "invalid message.".to_string() },
@@ -126,7 +122,7 @@ async fn handle_connection(
 
             let _ = conn.publish::<_, _, ()>(
                 format!("group:{}", group_clone),
-                serde_json::to_string(&event).unwrap()
+                compress_data(serde_json::to_string(&event).unwrap())
             ).await;
         }
     });
@@ -167,7 +163,7 @@ pub async fn redis_subscriber(state: AppState) {
     let mut stream = pubsub.on_message();
     while let Some(msg) = stream.next().await {
         let channel = msg.get_channel_name();
-        let payload: String = msg.get_payload().unwrap_or_default();
+        let payload: Vec<u8> = msg.get_payload().unwrap_or_default();
 
         // Extract group name from channel
         if let Some(group) = channel.strip_prefix("group:") {
@@ -176,7 +172,7 @@ pub async fn redis_subscriber(state: AppState) {
             let group_map = state.ws_groups.read().await;
             if let Some(members) = group_map.get(&project_id) {
                 for member in members {
-                    let _ = member.send(Message::Text(Utf8Bytes::from(payload.clone())));
+                    let _ = member.send(Message::Binary(Bytes::from(payload.clone())));
                 }
             }
         }
