@@ -27,7 +27,7 @@ impl WsEventReceive {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type")]
 pub enum WsEventSend {
     #[serde(rename = "auth_success")] AuthSuccess {

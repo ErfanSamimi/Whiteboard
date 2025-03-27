@@ -9,9 +9,9 @@ use common::{ compress_data, decompress_data, WsEventReceive, WsEventSend };
 use futures::{ stream::SplitSink, SinkExt, StreamExt };
 use tokio::sync::mpsc;
 use redis::AsyncCommands;
-use tokio::time::{ timeout, Duration };
+use tokio::time::{ timeout, Duration, sleep };
 
-use crate::api::common::{ AppState, ClientTx };
+use crate::{ api::common::{ AppState, ClientTx }, whiteboard::storage::{redis::RedisStorage, WhiteBoardStorage} };
 
 use super::project;
 
@@ -49,6 +49,7 @@ async fn handle_connection(
 ) {
     let (mut sender_ws, mut receiver_ws) = stream.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let mut user_ws_token: Option<String> = None;
 
     // --- Authenticate within 5 seconds ---
     let token_event_str = match timeout(Duration::from_secs(5), receiver_ws.next()).await {
@@ -66,12 +67,15 @@ async fn handle_connection(
             let auth_result = auth::authorize(project_id, &state, &event, &mut ws_auth_users).await;
             match &auth_result {
                 WsEventSend::AuthSuccess { message, user_token } => {
+                    user_ws_token = Some(user_token.clone());
+                    println!("[New connection] New user joind to group {}", project_id);
                     if send_event_to_ws(&mut sender_ws, auth_result).await.await.is_err() {
                         return;
                     }
                 }
                 _ => {
                     send_event_to_ws(&mut sender_ws, auth_result).await;
+                    let _ = sender_ws.send(Message::Close(None)).await;
                     return;
                 }
             }
@@ -103,6 +107,12 @@ async fn handle_connection(
 
     // Task: receive messages from the WebSocket and publish to Redis
     let recv_task = tokio::spawn(async move {
+        let mut redis_storage = RedisStorage::new(
+            project_id,
+            state.redis_client,
+            state.mongo_client.database("whiteboard_db").collection("whiteboards")
+        );
+
         while let Some(Ok(Message::Binary(comressed_message))) = receiver_ws.next().await {
             let mut conn = match redis_client.get_multiplexed_async_connection().await {
                 Ok(c) => c,
@@ -118,21 +128,57 @@ async fn handle_connection(
                 Err(_) => WsEventSend::Error { message: "invalid message.".to_string() },
             };
 
-            println!("Message {} published", event.get_name());            
+            println!("Message {} published", event.get_name());
+            
+            match &event{
+                WsEventSend::Error { message } => println!("{}", message),
+                _ => {}
+            }
+            
+            let updator_future = match &event {
+                WsEventSend::DrawingUpdate { data } => Some(redis_storage.set_whiteboard(data.clone())),
+                _ => None
+            };
 
             let _ = conn.publish::<_, _, ()>(
                 format!("group:{}", group_clone),
                 compress_data(serde_json::to_string(&event).unwrap())
             ).await;
+
+            if let Some(updator) = updator_future{
+                updator.await;
+            }
+        }
+    });
+
+    // Task: check if user is still authenticate and can send data for this project
+    let still_has_access = tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_secs(5)).await;
+            if let Some(user_token) = user_ws_token.as_ref() {
+                if ws_auth_users.is_authenticated(user_token.as_str()).is_some() {
+
+                } else {
+                    println!("user is not authenticated.");
+                    break;
+                }
+            } else {
+                break;
+            }
         }
     });
 
     // Wait for either task to finish (disconnect or error)
-    let _ = tokio::select! {
-        _ = send_task => {},
-        _ = recv_task => {},
+    let msg =
+        tokio::select! {
+        _ = send_task => "user sender disconnected",
+        _ = recv_task => "user receiver disconnected",
+        _ = still_has_access => "user lose it's access to the project",
     };
 
+    let _ = tx.send(Message::Close(None));
+    println!("End WS connection: {}", msg);
+    
     // Remove this client from the group after disconnect
     let mut group_map = state.ws_groups.write().await;
     if let Some(members) = group_map.get_mut(&project_id) {
@@ -148,13 +194,12 @@ async fn handle_connection(
 // Listens for messages published to Redis and sends them to local WebSocket clients
 pub async fn redis_subscriber(state: AppState) {
     // Create Redis connection and extract pubsub
-    let mut conn = match state.redis_client.get_async_connection().await {
+    let mut pubsub = match state.redis_client.get_async_pubsub().await {
         Ok(c) => c,
         Err(_) => {
             return;
         }
     };
-    let mut pubsub = conn.into_pubsub();
 
     // Subscribe to all group channels
     let _: () = pubsub.psubscribe("group:*").await.unwrap();

@@ -170,7 +170,7 @@ pub async fn authorize(project_id: i64, state: &AppState, event: &WsEventReceive
                     let perm = is_collaborator(project_id, state, &claims).await;
                     match perm {
                         Ok(_) => {
-                            let ws_token = generate_random_string(16);
+                            let ws_token = claims.get_user_id().to_string();
                             ws_auth_users.add_auth_user(ws_token.as_str(), claims.get_user_id().to_string().as_str());
                             return WsEventSend::AuthSuccess {
                                 message: "Authenticated successfully".to_string(),

@@ -1,13 +1,10 @@
 use super::WhiteBoardStorage;
 use crate::whiteboard::WhiteBoardData;
-use http::header::Keys;
 use mongodb::{ bson::Document, Collection };
-use redis::{ Client, Commands, RedisError, AsyncCommands };
+use redis::{ Client, AsyncCommands };
 use std::sync::Arc;
 use super::mongo::MongoDBStorage;
-use futures::Future;
 use serde::{ Serialize, Deserialize };
-use serde_json::Value;
 use std::time::{ SystemTime, UNIX_EPOCH };
 
 pub struct RedisStorage {
@@ -88,7 +85,7 @@ impl RedisStorage {
             local timestamp = ARGV[2]
             
             -- Set the key with the provided value and an expiration of 3600 seconds (1 hour)
-            redis.call("SET", key, value, "EX", 9)
+            redis.call("SET", key, value, "EX", 3600)
                     
             return "OK"
         "#
@@ -109,7 +106,7 @@ impl RedisStorage {
     async fn update_data_in_cache(&self, data: RedisSavingData) {
         println!("Updating whiteboard data");
 
-        let mut con = self.redis_cli.get_multiplexed_async_connection();
+        let con = self.redis_cli.get_multiplexed_async_connection();
 
         let script = redis::Script::new(
             r#"
@@ -118,7 +115,7 @@ impl RedisStorage {
             local timestamp = ARGV[2]
             
             -- Set the key with the provided value and an expiration of 3600 seconds (1 hour)
-            redis.call("SET", key, value, "EX", 9)
+            redis.call("SET", key, value, "EX", 3600)
             
             -- Store the key and timestamp in the hash set "updated_whiteboards"
             redis.call("HSET", "updated_whiteboards", key, timestamp)            
@@ -144,7 +141,7 @@ impl RedisStorage {
 
         let con = self.redis_cli.get_multiplexed_async_connection();
         let key = self.get_cache_key();
-        let _: () = con.await.unwrap().expire(key, 9).await.unwrap();
+        let _: () = con.await.unwrap().expire(key, 3600).await.unwrap();
     }
 
 
