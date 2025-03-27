@@ -1,11 +1,7 @@
 pub mod storage;
 use serde::{ Deserialize, Serialize };
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Point {
-    x: f32,
-    y: f32,
-}
+type Point = (f32, f32);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Line {

@@ -104,15 +104,29 @@ async fn handle_connection(
     // Task: receive messages from the WebSocket and publish to Redis
     let recv_task = tokio::spawn(async move {
         while let Some(Ok(Message::Text(text))) = receiver_ws.next().await {
-            let mut conn = match redis_client.get_async_connection().await {
+            let mut conn = match redis_client.get_multiplexed_async_connection().await {
                 Ok(c) => c,
                 Err(_) => {
                     continue;
                 }
             };
+
+        //     let _ = conn.publish::<_, _, ()>(
+        //         format!("group:{}", group_clone),
+        //         text.to_string()
+        //     ).await;
+        // }
+        
+            let event = match serde_json::from_str::<WsEventReceive>(text.as_str()) {
+                Ok(e) => WsEventSend::from(&e),
+                Err(_) => WsEventSend::Error { message: "invalid message.".to_string() },
+            };
+
+            println!("Message {} published", event.get_name());            
+
             let _ = conn.publish::<_, _, ()>(
                 format!("group:{}", group_clone),
-                text.to_string()
+                serde_json::to_string(&event).unwrap()
             ).await;
         }
     });
