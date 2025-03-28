@@ -1,5 +1,4 @@
 use chrono::{ DateTime, Utc };
-use crate::api::project;
 use crate::project::Project;
 use crate::whiteboard::storage::WhiteBoardStorage;
 use serde::{Serialize, Deserialize};
@@ -8,9 +7,7 @@ use super::auth::{Claims, AuthError};
 use axum::{
     extract::{State, Path},
     http::StatusCode,
-    response::{IntoResponse, Response},
     Json,
-    debug_handler,
 };
 use sqlx::{ FromRow, PgPool };
 use std::collections::HashMap;
@@ -169,17 +166,17 @@ pub mod permissions {
 
     use super::*;
     pub enum ProjPermError {
-        NOT_FOUND,
-        NOT_OWNER,
-        NOT_COLABORATOR
+        NotFound,
+        NotOwner,
+        NotColaborator
     }
 
     impl ToString for ProjPermError {
         fn to_string(&self) -> String {
             return match self {
-                Self::NOT_COLABORATOR => "not collaborator of the project.",
-                Self::NOT_FOUND => "project not found",
-                Self::NOT_OWNER => "not owner of the proejct"
+                Self::NotColaborator => "not collaborator of the project.",
+                Self::NotFound => "project not found",
+                Self::NotOwner => "not owner of the proejct"
             }.to_string();
         }
     }
@@ -193,7 +190,7 @@ pub mod permissions {
     async fn get_project(project_id: i64, state: &AppState) -> Result<Project, ProjPermError>{
         let proj = Project::get_by_id(&state.pg_pool, project_id).await.unwrap();
         if proj.is_none(){
-            return Err(ProjPermError::NOT_FOUND);
+            return Err(ProjPermError::NotFound);
         }
         return Ok(proj.unwrap());
     }
@@ -203,7 +200,7 @@ pub mod permissions {
         if proj.get_owner_id() == claims.get_user_id() {
             return Ok(proj);
         }
-        return Err(ProjPermError::NOT_OWNER);
+        return Err(ProjPermError::NotOwner);
     }
 
 
@@ -215,12 +212,11 @@ pub mod permissions {
         if proj.is_collaborator(&state.pg_pool, claims.get_user_id()).await.unwrap(){
             return Ok(proj);
         }
-        return Err(ProjPermError::NOT_COLABORATOR);
+        return Err(ProjPermError::NotColaborator);
     }  
 }
 
 
-#[debug_handler]
 pub async fn project_creation_view(
     claims: Claims,
     State(state): State<AppState>,
@@ -248,7 +244,6 @@ pub async fn project_creation_view(
 
 
 
-#[debug_handler]
 pub async fn owned_project_list_view(
     claims: Claims,
     State(state): State<AppState>
@@ -268,7 +263,6 @@ pub async fn owned_project_list_view(
     );
 }
 
-#[debug_handler]
 pub async fn add_collaborator_view(
     claims: Claims,
     State(state): State<AppState>,
@@ -295,7 +289,6 @@ pub async fn add_collaborator_view(
 }
 
 
-#[debug_handler]
 pub async fn get_whiteboard_data_view(
     claims: Claims,
     State(state): State<AppState>,

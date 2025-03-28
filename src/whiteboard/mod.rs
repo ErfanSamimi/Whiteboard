@@ -5,8 +5,11 @@ type Point = (f32, f32);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Line {
+    #[serde(rename = "p")]
     points: Vec<Point>,
+    #[serde(rename = "c")]
     color: String,
+    #[serde(rename = "w")]
     width: u32,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]

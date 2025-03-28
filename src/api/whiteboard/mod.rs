@@ -13,8 +13,6 @@ use tokio::time::{ timeout, Duration, sleep };
 
 use crate::{ api::common::{ AppState, ClientTx }, whiteboard::storage::{redis::RedisStorage, WhiteBoardStorage} };
 
-use super::project;
-
 // --- WebSocket Handler ---
 
 // Called when a new client connects to a WebSocket group
@@ -74,7 +72,7 @@ async fn handle_connection(
                     }
                 }
                 _ => {
-                    send_event_to_ws(&mut sender_ws, auth_result).await;
+                    let _ = send_event_to_ws(&mut sender_ws, auth_result).await.await;
                     let _ = sender_ws.send(Message::Close(None)).await;
                     return;
                 }

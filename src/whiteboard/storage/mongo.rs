@@ -3,7 +3,6 @@ use serde::{ Serialize, Deserialize };
 use serde_json::Value;
 use crate::whiteboard::WhiteBoardData;
 use super::WhiteBoardStorage;
-use std::sync::Arc;
 #[derive(Serialize, Deserialize, Debug)]
 struct MongodbSavingData {
     #[serde(rename = "_id")]

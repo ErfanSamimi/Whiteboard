@@ -46,7 +46,7 @@ impl RedisStorage {
 
     async fn load_whiteboard_data(&mut self) -> WhiteBoardData {
         println!("Loading whiteboard data");
-        let mut con = self.redis_cli.get_multiplexed_async_connection();
+        let con = self.redis_cli.get_multiplexed_async_connection();
 
         let key = self.get_cache_key();
 
@@ -76,7 +76,7 @@ impl RedisStorage {
     async fn save_data_in_cache(&self, data: RedisSavingData) {
         println!("Saving whiteboard data");
 
-        let mut con = self.redis_cli.get_multiplexed_async_connection();
+        let con = self.redis_cli.get_multiplexed_async_connection();
 
         let script = redis::Script::new(
             r#"

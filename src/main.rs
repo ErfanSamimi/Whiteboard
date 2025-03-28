@@ -116,6 +116,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let app = Router::new()
         .route("/api/auth/login/", post(api::auth::authorize))
         .route("/api/projects/users/", get(api::user::user_list_view))
+        .route("/api/users/", post(api::user::user_register_view))
         .route("/api/projects/",
              post(api::project::project_creation_view)
             .get(api::project::owned_project_list_view)

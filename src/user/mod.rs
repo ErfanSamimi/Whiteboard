@@ -1,7 +1,5 @@
-use std::thread::current;
 
 use sqlx::FromRow;
-use sqlx::postgres::PgPoolOptions;
 
 use chrono::{DateTime, Utc};
 use pbkdf2::pbkdf2_hmac;

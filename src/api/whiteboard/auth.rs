@@ -1,7 +1,7 @@
 use super::common::{ WsEventReceive, WsEventSend };
 use crate::api::auth::validate_token;
 use crate::api::common::AppState;
-use crate::api::project::permissions::{ self, is_collaborator };
+use crate::api::project::permissions::is_collaborator;
 
 use rand::{distributions::Alphanumeric, Rng};
 use std::{collections::HashMap, sync::Arc};
@@ -9,26 +9,13 @@ use redis::{Commands, Script, Client, Connection};
 
 pub struct RedisActions {
     conn: Connection,
-    update_script: Script,
 }
 
 impl RedisActions {
     pub fn new(client: &Client) -> redis::RedisResult<Self> {
         let conn = client.get_connection()?;
 
-        let update_script = Script::new(r#"
-            local key = KEYS[1]
-            local new_data = ARGV[1]
-            local expire_time = tonumber(ARGV[2])
-
-            if redis.call("exists", key) == 1 then
-                return redis.call("set", key, new_data, "EX", expire_time)
-            else
-                return redis.call("set", key, new_data, "NX", "EX", expire_time)
-            end
-        "#);
-
-        Ok(Self { conn, update_script })
+        Ok(Self { conn })
     }
     pub fn set_multiple_keys_atomic(
         &mut self,
@@ -79,14 +66,6 @@ impl RedisActions {
         Ok(deleted > 0)
     }
 
-    pub fn atomic_update(&mut self, key: &str, value: &str, expiration: u32) -> redis::RedisResult<()> {
-        self.update_script
-            .key(key)
-            .arg(value)
-            .arg(expiration.to_string())
-            .invoke(&mut self.conn)?;
-        Ok(())
-    }
 
     pub fn key_exists(&mut self, key: &str) -> redis::RedisResult<bool> {
         let exists: i32 = self.conn.exists(key)?;
