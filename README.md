@@ -1,4 +1,4 @@
-# Whiteboard API Documentation
+# Collaborative Whiteboard API Documentation Written in Rust
 
 ## Overview
 This API provides functionality for a collaborative whiteboard application with user authentication, project management, and real-time drawing capabilities.
